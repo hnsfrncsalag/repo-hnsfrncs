@@ -1,0 +1,801 @@
+<?php
+session_start();
+require_once "class/db_connect.php";
+require_once("class/barangay.php");
+require_once("class/cases.php");
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $barangay = isset($_POST['barangay']) ? $_POST['barangay'] : null;
+    $caseType = isset($_POST['caseType']) ? $_POST['caseType'] : null;
+    $petType = isset($_POST['petType']) ? $_POST['petType'] : null;
+    $vaccination = isset($_POST['vaccination']) ? $_POST['vaccination'] : null;
+    $min_date = isset($_POST['min_date']) ? $_POST['min_date'] : null;
+    $max_date = isset($_POST['max_date']) ? $_POST['max_date'] : null;
+
+    global $conn;
+
+    $query = filterData($barangay, $caseType, $petType, $vaccination, $min_date, $max_date);
+
+    $result = mysqli_query($conn, $query);
+
+    // Fetch results and use them
+    $heatmapData = [];
+    while ($row = mysqli_fetch_assoc($result)) {
+        if (isset($row['latitude'], $row['longitude'])) {
+            $lat = $row['latitude'];
+            $lng = $row['longitude'];
+            $heatmapData[] = [$lat, $lng]; // Push data to the array
+        }
+    }
+
+    if (!$result) {
+        die("Error executing query: " . mysqli_error($conn));
+    }
+
+    $barangay1 = new Barangay();
+    $brgy = $barangay1->getFilterLocation($barangay);
+
+    if ($brgy && isset($brgy[0]['latitude'], $brgy[0]['longitude'])) {
+        $lat1 = $brgy[0]['latitude'];
+        $lng1 = $brgy[0]['longitude'];
+        $barangayName = $brgy[0]['barangay'];
+    }
+
+    $case = new Cases();
+    $count = new Cases();
+    $count1 = new Cases();
+    $count2 = new Cases();
+    $count3 = new Cases();
+    $counts = $count->countCase($barangay);
+    $counts1 = $count1->countAllCase($barangay);
+    $counts2 = $count2->countAllCasePerYear($barangay);
+    $counts3 = $count3->countAllValidCasePerYear($barangay);
+    $bites = $case->getAllValidBiteCaseByBrgy($barangay);
+}
+
+function filterData($barangay, $caseType, $petType, $vaccination, $min_date, $max_date)
+{
+    global $conn;
+
+    $query = "SELECT * FROM `case` c LEFT JOIN `pet` p ON c.petID = p.petID LEFT JOIN `vaccination` v ON p.petID = v.petID LEFT JOIN `geolocation` g ON g.geoID = c.caseGeoID LEFT JOIN `barangay` b ON b.brgyID = c.brgyID WHERE 1"; // Start with 1 to ensure the WHERE clause is always valid
+
+    $conditions = [];
+    if (!empty($barangay)) {
+        $conditions[] = "c.brgyID = '{$barangay}'";
+    }
+    if (!empty($caseType)) {
+        $conditions[] = "c.caseType = '{$caseType}'";
+    }
+    if (!empty($petType)) {
+        $conditions[] = "p.petType = '{$petType}'";
+    }
+    if (!empty($vaccination)) {
+        $conditions[] = "v.vacStatus = '{$vaccination}'";
+    }
+    if (!empty($min_date) && !empty($max_date)) {
+        $conditions[] = "c.date BETWEEN '{$min_date}' AND '{$max_date}'";
+    }
+
+    if (!empty($conditions)) {
+        $query .= " AND " . implode(' AND ', $conditions);
+    }
+
+    $query .= " GROUP BY c.caseID";
+
+    return $query;
+}
+$name = isset($_SESSION['admin']['name']) ? $_SESSION['admin']['name'] : '';
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PETSTAT</title>
+    <link rel="icon" type="image/x-icon" href="petstaticon.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="petstaticon.png">
+    <link rel="stylesheet" href="style.css">
+    <!-- Bootstrap CSS CDN -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
+
+    <!-- JavaScript imports -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.maptiler.com/maptiler-sdk-js/v1.1.1/maptiler-sdk.umd.js"></script>
+    <script src="https://cdn.maptiler.com/leaflet-maptilersdk/v1.0.0/leaflet-maptilersdk.js"></script>
+    <script src="https://unpkg.com/heatmap.js"></script>
+    <script src="https://unpkg.com/leaflet.heat"></script>
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.25/js/dataTables.bootstrap4.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.2.2/js/dataTables.buttons.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/buttons/2.2.2/css/buttons.dataTables.min.css">
+    <script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.html5.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.2.2/js/buttons.print.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+
+        .container {
+            /* margin-top: 50px; */
+            background-color: #ffffff;
+            /* padding: 20px; */
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .container1 {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            /* 12 columns */
+            grid-auto-rows: minmax(50px, auto);
+            /* row height */
+            grid-gap: 10px;
+            /* gap between grid items */
+            width: 100%;
+            /* width of the container */
+        }
+
+        .box {
+            border: 1px solid black;
+            /* padding: 5px; padding inside the box  */
+        }
+
+        #map {
+            height: 500px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            border: 1px solid #ddd;
+
+        }
+
+        #myChart {
+            height: 200px;
+        }
+
+        #pieChart {
+            height: 100px;
+            width: 200%;
+        }
+
+        .card {
+            margin-top: 5px;
+        }
+
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: start;
+        }
+
+        @media (min-width: 768px) {
+            .chart-container {
+                flex-wrap: nowrap;
+            }
+        }
+
+        /* canvas {
+            max-width: 200%;
+            height: auto;
+            overflow: hidden;
+
+        } */
+
+        .left-sidebar--sticky-container {
+            width: 100%;
+        }
+
+        .sidebar {
+            /* position: fixed; */
+            top: 0;
+            left: 0;
+            height: 100%;
+            /* Adjust width as needed */
+            background: #ffcad4;
+            /* z-index: 1000; */
+        }
+
+        @media (max-width: 1000px) {
+            .sidebar {
+                width: 100%;
+                /* Full width on small screens */
+                position: relative;
+                height: auto;
+            }
+        }
+
+        @media (min-width: 876px) {
+            .h-sm-100 {
+                height: 100%;
+            }
+        }
+    </style>
+</head>
+
+
+<body>
+
+        <?php include 'navbar.php'; ?>
+            <div class="col d-flex flex-column h-sm-100">
+                <main class="row overflow-auto">
+                    <div class="col-md-10 p-1 mt-2 my-auto mx-auto">
+                        <div class="container mt-2 p-3">
+                            <strong>Filter: </strong>
+                            <select class="form-select mb-2" onchange="this.options[this.selectedIndex].value && (window.location = this.options[this.selectedIndex].value);">
+                                <option value="filterCaseIndex.php">Cases</option>
+                                <option value="filterPetIndex.php">Pets</option>
+                            </select>
+                        </div>
+                        <div class="container mt-2 p-3">
+                            <div class="row">
+                                <!-- Button trigger modal -->
+                                <div class="col-md-auto">
+                                    <button type="button" class="btn btn-primary mb-2" data-toggle="modal" data-target="#filterModal">
+                                        Filter Pet
+                                    </button>
+                                </div>
+
+
+                                <!-- Modal -->
+                                <div class="modal fade" id="filterModal" tabindex="-1" role="dialog" aria-labelledby="filterModalLabel" aria-hidden="true">
+                                    <div class="modal-dialog" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="filterModalLabel">Filter Pet</h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <!-- Filter form -->
+                                                <form method="post">
+                                                    <div class="form-row">
+                                                        <div class="form-group col-md-4">
+                                                            <label for="barangay">Barangay:</label>
+                                                            <select id="barangay" class="form-control" name="barangay">
+                                                                <option value="">Select Barangay</option>
+                                                                <?php
+                                                                global $conn;
+                                                                $query = "SELECT brgyID, barangay FROM barangay";
+                                                                $result = mysqli_query($conn, $query);
+
+                                                                // Loop through the query results and generate options
+                                                                while ($row = mysqli_fetch_assoc($result)) {
+                                                                    $brgyID = $row['brgyID'];
+                                                                    $barangay = $row['barangay'];
+                                                                    echo "<option value='$brgyID'>$barangay</option>";
+                                                                }
+                                                                // Release the result set
+                                                                mysqli_free_result($result);
+
+                                                                // Check for errors
+                                                                if (!$result) {
+                                                                    die("Database query failed.");
+                                                                }
+                                                                ?>
+                                                            </select>
+                                                        </div>
+                                                        <div class="form-group col-md-4">
+                                                            <label for="petType">Pet Type:</label>
+                                                            <select name="petType" id="petType" class="form-control">
+                                                                <option value="">All</option>
+                                                                <option value="0">Dog</option>
+                                                                <option value="1">Cat</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="form-group col-md-4">
+                                                            <label for="vaccination">Vaccination:</label>
+                                                            <select name="vaccination" id="vaccination" class="form-control">
+                                                                <option value="">All</option>
+                                                                <option value="0">Not Vaccinated</option>
+                                                                <option value="1">Vaccinated</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="form-row">
+                                                        <div class="form-group col-md-6">
+                                                            <label for="min_date">From:</label>
+                                                            <input type="date" name="min_date" id="min_date" class="form-control">
+                                                        </div>
+                                                        <div class="form-group col-md-6">
+                                                            <label for="max_date">To:</label>
+                                                            <input type="date" name="max_date" id="max_date" class="form-control">
+                                                        </div>
+                                                    </div>
+
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                                                <button type="submit" class="btn btn-primary">Apply Filter</button>
+                                            </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Display Map -->
+                                <div class="row">
+                                    <div class="col-sm-8 col-12-lg">
+
+                                        <!-- style="grid-column: 1 / span 8; grid-row: 1 / span 4;"> -->
+                                        <div id="map"></div>
+
+
+                                        <script>
+                                            function updateHeatmapData(newData) {
+                                                heatmapData = newData;
+                                                heat.setLatLngs(newData).redraw();
+                                            }
+
+                                            function initializeMap() {
+                                                const key = 'A8yOIIILOal2yE0Rvb63';
+                                                // Use PHP to echo the latitude and longitude values
+                                                const lat1 = <?php echo isset($lat1) ? $lat1 : 10.879960; ?>;
+                                                const lng1 = <?php echo isset($lng1) ? $lng1 : 122.481826; ?>;
+
+                                                const map = L.map('map').setView([lat1, lng1], 15);
+
+                                                const mtLayer = L.maptilerLayer({
+                                                    apiKey: key,
+                                                    style: "8a85054c-5879-4e0b-b2f8-7f9564b6e3f8", //optional
+                                                }).addTo(map);
+
+                                                var heatmapData = [];
+
+                                                // Create heatmap layer using Leaflet Heatmap Overlay plugin
+                                                var heat = L.heatLayer(heatmapData, {
+                                                    radius: 30,
+                                                    blur: 30,
+                                                    maxZoom: 18,
+                                                    max: .3,
+                                                    gradient: {
+                                                        0.5: 'green'
+                                                    }
+                                                }).addTo(map);
+
+                                                // Update heatmap data and redraw the layer when needed
+                                                function updateHeatmapData(newData) {
+                                                    heatmapData = newData;
+                                                    heat.setLatLngs(newData).redraw();
+                                                }
+                                                <?php
+                                                // JavaScript block with PHP values
+                                                if (isset($heatmapData)) {
+                                                    echo "var initialData = " . json_encode($heatmapData) . ";";
+                                                    echo "updateHeatmapData(initialData);"; // Update the heatmap initially with fetched data
+                                                }
+                                                ?>
+                                            }
+
+                                            initializeMap(); // Call the function to initialize the map
+                                        </script>
+                                    </div>
+                                    <!-- Display Charts
+                <h5 class="card-title">Charts</h5> -->
+                                    <div class="col-sm-auto col-md-4 mx-auto my-auto">
+                                        <!-- style="grid-column: 9 / span 4; grid-row: 1 / span 2;"> -->
+                                        <canvas id="myChart"></canvas>
+                                        <script>
+                                            document.addEventListener('DOMContentLoaded', function() {
+                                                // Data for the chart
+                                                <?php
+                                                // JavaScript block with PHP values for the chart
+                                                if (isset($counts, $counts1)) {
+                                                    // Create an array with all month names
+                                                    $allMonths = [
+                                                        'January', 'February', 'March', 'April', 'May', 'June',
+                                                        'July', 'August', 'September', 'October', 'November', 'December'
+                                                    ];
+
+                                                    // Initialize labels and data arrays
+                                                    $labels = [];
+                                                    $data = [];
+                                                    $data1 = [];
+
+
+                                                    // Loop through all months
+                                                    foreach ($allMonths as $monthName) {
+                                                        // Check if there is data for the current month in $counts
+                                                        $found = false;
+                                                        foreach ($counts as $count) {
+                                                            $countMonthName = date('F', mktime(0, 0, 0, $count['month'], 1, $count['year']));
+                                                            if ($countMonthName === $monthName) {
+                                                                $found = true;
+                                                                // Extract 'count_per_month' value as data
+                                                                $data[] = $count['count_per_month'];
+                                                                break;
+                                                            }
+                                                        }
+
+                                                        // If no data for the current month in $counts, set count_per_month to 0
+                                                        if (!$found) {
+                                                            $data[] = 0;
+                                                        }
+
+                                                        // Check if there is data for the current month in $counts1
+                                                        $found1 = false;
+                                                        foreach ($counts1 as $count1) {
+                                                            $countMonthName = date('F', mktime(0, 0, 0, $count1['month'], 1, $count1['year']));
+                                                            if ($countMonthName === $monthName) {
+                                                                $found1 = true;
+                                                                // Extract 'count_per_month' value as data1
+                                                                $data1[] = $count1['count_per_month'];
+                                                                break;
+                                                            }
+                                                        }
+
+                                                        // If no data for the current month in $counts1, set count_per_month to 0
+                                                        if (!$found1) {
+                                                            $data1[] = 0;
+                                                        }
+
+
+                                                        // Add the month name to labels only once
+                                                        $labels[] = $monthName;
+                                                    }
+
+                                                    echo "var labels = " . json_encode($labels) . ";";
+                                                    echo "var data = " . json_encode($data) . ";";
+                                                    echo "var data1 = " . json_encode($data1) . ";";
+                                                }
+                                                ?>
+
+                                                // Create the chart
+                                                var ctx = document.getElementById('myChart').getContext('2d');
+                                                var myChart = new Chart(ctx, {
+                                                    type: 'bar',
+                                                    data: {
+                                                        labels: labels,
+                                                        datasets: [{
+                                                                label: 'New Registered Pet',
+                                                                data: data1,
+                                                                backgroundColor: 'rgba(0, 123, 255, 0.5)',
+                                                                borderColor: 'rgba(0, 123, 255, 1)',
+                                                                borderWidth: 1,
+                                                            },
+                                                            {
+                                                                label: 'Vaccinated Pet',
+                                                                data: data,
+                                                                backgroundColor: 'rgba(0,255,0, 0.5)',
+                                                                borderColor: 'rgba(0,255,0, 1)',
+                                                                borderWidth: 1,
+                                                            }
+                                                        ]
+                                                    },
+                                                    options: {
+                                                        scales: {
+                                                            y: {
+                                                                beginAtZero: true
+                                                            }
+                                                        }
+                                                    }
+                                                });
+                                            });
+                                        </script>
+
+                                        <div class="row justify-content-center vh-100" style="max-width: 200px; max-height:200px">
+                                            <div class="col-sm-auto col-sm-8 m-1 mx-auto">
+
+                                                <!-- style="grid-column: 9 / span 4; grid-row: 3 / span 2;"> -->
+                                                <canvas id="pieChart"></canvas>
+                                                <script>
+                                                    <?php
+                                                    // Initialize arrays for data2 and data3
+                                                    $data2 = [];
+                                                    $data3 = [];
+
+                                                    // Check if there is data for the current year in $counts2
+                                                    $found2 = false;
+                                                    foreach ($counts2 as $count2) {
+                                                        // Extract 'count_per_year' value as data2
+                                                        $data2[Date('Y')] = $count2['count_per_year'];
+                                                        $found2 = true;
+                                                    }
+
+                                                    // If no data for the current year in $counts2, set count_per_year to 0
+                                                    if (!$found2) {
+                                                        $data2[Date('Y')] = 0;
+                                                    }
+
+                                                    // Check if there is data for the current year in $counts3
+                                                    $found3 = false;
+                                                    foreach ($counts3 as $count3) {
+                                                        // Extract 'count_per_year' value as data3
+                                                        $data3[Date('Y')] = $count3['count_per_year'];
+                                                        $found3 = true;
+                                                    }
+
+                                                    // If no data for the current year in $counts3, set count_per_year to 0
+                                                    if (!$found3) {
+                                                        $data3[Date('Y')] = 0;
+                                                    }
+
+                                                    // Calculate total cases (which is the total number of reported cases)
+                                                    $totalReportedCases = $data2[Date('Y')] + $data3[Date('Y')];
+
+                                                    // Calculate percentages
+                                                    $reportedPercentage = ($totalReportedCases > 0) ? ($data2[Date('Y')] / $totalReportedCases) * 100 : 0;
+                                                    $confirmedPercentage = ($totalReportedCases > 0) ? ($data3[Date('Y')] / $totalReportedCases) * 100 : 0;
+
+                                                    // Use $reportedPercentage and $confirmedPercentage in the JavaScript block
+                                                    echo "var reportedPercentage = " . json_encode($reportedPercentage) . ";";
+                                                    echo "var confirmedPercentage = " . json_encode($confirmedPercentage) . ";";
+
+                                                    ?>
+                                                    // Create the pie chart
+                                                    var ctxPie = document.getElementById('pieChart').getContext('2d');
+                                                    var myPieChart = new Chart(ctxPie, {
+                                                        type: 'pie',
+                                                        data: {
+                                                            labels: ['Vaccinated Pet (Total: <?= intval($data3[Date('Y')]) ?>)', 'Registered Pet (Total: <?= intval($data2[Date('Y')]) ?>)'],
+                                                            datasets: [{
+                                                                data: [<?= $data3[Date('Y')] ?>, <?= $data2[Date('Y')] ?>],
+                                                                backgroundColor: ['rgba(0,255,0, 0.5)', 'rgba(0, 123, 255, 0.5)'],
+                                                                borderColor: ['rgba(0,255,0, 1)', 'rgba(0, 123, 255, 1)'],
+                                                                borderWidth: 1,
+
+                                                            }],
+                                                        },
+                                                        options: {
+                                                            responsive: true,
+                                                            maintainAspectRatio: false,
+                                                            legend: {
+                                                                display: true,
+                                                                position: 'top',
+                                                                labels: {
+                                                                    fontColor: 'black',
+                                                                },
+                                                            },
+                                                        },
+                                                    });
+                                                </script>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <br>
+                            <!-- <div class="table-responsive">
+                                <table id="registries" class="table text-center table-striped table-bordered table-hover" style="width:100%">
+                                    <div class="row">
+                                        <thead>
+                                            <tr class="text-center">
+                                                <th style="width: 15%">Owner's Name</th>
+                                                <th style="width: 15%">Date of Registry</th>
+                                                <th style="width: 5%">Species</th>
+                                                <th style="width: 8%">Name of Pet</th>
+                                                <th style="width: 5%">Sex</th>
+                                                <th style="width: 3%">Age</th>
+                                                <th style="width: 13%">Neutering</th>
+                                                <th style="width: 15%">Color</th>
+                                                <th style="width: 8%">Vaccination Status</th>
+                                                <th style="width: 13%">Current Vaccination</th>
+                                                <th style="width: 13%">Address</th>
+                                            </tr>
+                                        </thead>
+                                    </div>
+                                    <tbody>
+                                        <?php
+                                        // $pets = "";
+                                        // if ($pets) {
+                                        //     foreach ($pets as $row) {
+                                        //         echo '<tr class="text-center">';
+                                        //         echo "<td>" . $row["name"] . "</td>";
+                                        //         $input_date = $row['regDate'];
+                                        //         $date_obj = new DateTime($input_date);
+                                        //         $formatted_date = $date_obj->format("F j Y");
+                                        //         echo '<td>' . $formatted_date . '</td>';
+                                        //         echo "<td>" . ($row["petType"] == 0 ? 'Dog' : 'Cat') . "</td>";
+                                        //         echo "<td>" . $row["pname"] . "</td>";
+                                        //         echo "<td>" . ($row["sex"] == 0 ? 'Male' : 'Female') . "</td>";
+                                        //         echo "<td>" . $row["age"] . "</td>";
+                                        //         echo "<td>" . ($row["Neutering"] == 0 ? 'Neutered' : 'Not Neutered') . "</td>";
+                                        //         echo "<td>" . $row["color"] . "</td>";
+                                        //         echo "<td>" . ($row["statusVac"] == 0 ? 'Unaccinated' : 'Vaccinated') . "</td>";
+                                               
+                                        //         $input_date = $row['currentVac'];
+                                        //         $date_obj = new DateTime($input_date);
+                                        //         $formatted_date = $date_obj->format("F j Y");
+                                        //         echo '<td>' . $formatted_date . '</td>';
+                                        //         echo "<td>" . $row["barangay"] . "</td>";
+                                        //         echo "</tr>";
+                                        //     }
+                                        // } else {
+                                        //     echo "<tr><td colspan='12'>No pets found for this barangay.</td></tr>";
+                                        // }
+
+                                        ?>
+                                    </tbody>
+                                </table>
+                            </div> -->
+                        </div>
+                        <!-- Your JavaScript code -->
+                        <script>
+                            jQuery(document).ready(function($) {
+                                // Initialize DataTable
+                                $('#registries').DataTable({
+                                    // Apply default sorting on the 4th column (index 3) in descending order
+                                    "order": [
+                                        [3, 'desc']
+                                    ],
+                                    // Configure layout for DataTables buttons
+                                    "dom": 'Bfrtip',
+                                    "buttons": [
+                                        'copy',
+                                        'csv',
+                                        'excel',
+                                        {
+                                            extend: 'pdfHtml5',
+                                            orientation: 'landscape', // Set PDF orientation to landscape
+                                            customize: function(doc) {
+                                                // Set page size to long size bond paper (8.5" x 13") and adjust column widths
+                                                doc.pageSize = {
+                                                    width: 330.2,
+                                                    height: 215.9
+                                                }; // 13 * 25.4, 8.5 * 25.4
+                                                doc.pageMargins = [5, 5, 5, 5]; // Adjust margins [left, top, right, bottom]
+
+                                                // Adjust table column widths
+                                                var tableColumnWidths = ['15%', '13%', '3%', '8%', '5%', '3%', '10%', '15%', '8%', '13%', '13%'];
+                                                doc.content[1].table.widths = tableColumnWidths;
+
+                                                // Adjust font size and line height
+                                                var fontSize = 3; // Adjust font size to fit your requirements
+                                                var lineHeight = .2; // Adjust line height to fit your requirements
+                                                doc.content[1].table.body.forEach(function(row) {
+                                                    row.forEach(function(cell) {
+                                                        cell.fontSize = fontSize;
+                                                        cell.lineHeight = lineHeight;
+                                                    });
+                                                });
+
+                                                // Adjust the title font size and include line breaks
+                                                doc.content[0].text = 'National Rabies Prevention and Control Program\nRabies Free Visayas Project\nDog Registry and Vaccination Records'; // Change the title text
+                                                doc.content[0].fontSize = 4; // Change the title font size to fit your requirements
+                                                doc.content[0].alignment = 'center'; // Center align the title
+                                            }
+                                        },
+                                        'print'
+                                    ]
+                                });
+                            });
+                        </script>
+</body>
+
+<?php
+// session_start();
+require_once("class/db_connect.php");
+require_once("class/barangay.php");
+require_once("class/notification.php");
+require_once("class/cases.php");
+require_once("class/resident.php");
+
+// Check if the user is logged in
+// if (!isset($_SESSION['user'])) {
+//     header("Location: login.php");
+//     exit();
+// }
+
+// Replace these with your actual database credentials
+global $conn;
+
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $mysqli->connect_error);
+}
+
+// Prepare the SQL query
+$sql = "SELECT n.notifMessage, n.notifDate, n.notifType, r.name, b.barangay FROM notification AS n INNER JOIN resident as r ON r.residentID = n.residentID JOIN barangay as b ON b.brgyID = r.brgyID
+        WHERE n.notifType IN (2, 4) 
+        ORDER BY n.notifDate DESC";
+
+// Prepare the statement
+$stmt = $conn->prepare($sql);
+if ($stmt === false) {
+    die("Error in preparing statement: " . $mysqli->error);
+}
+
+// Execute the query
+if (!$stmt->execute()) {
+    die("Error in executing statement: " . $stmt->error);
+}
+
+// Get the result
+$result = $stmt->get_result();
+
+// Initialize an empty array to store notifications
+$allNotifs = [];
+
+// Fetch notifications as an associative array
+if ($result->num_rows > 0) {
+    $allNotifs = $result->fetch_all(MYSQLI_ASSOC);
+}
+
+// Close the statement
+$stmt->close();
+
+// Close the database connection
+$conn->close();
+?>
+
+<div class="modal fade" id="notificationModal" tabindex="-1" aria-labelledby="notificationModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="notificationModalLabel">Notifications</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <?php if (!empty($allNotifs)) { ?>
+                    <table class="table text-start table-bordered table-hover" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th>Message</th>
+                                <th>Date</th>
+                                <th>Barangay</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($allNotifs as $notif) { ?>
+                                <tr>
+                                    <?php
+                                    $redirectUrl = '';
+
+                                    switch ($notif['notifType']) {
+                                        case 2:
+                                            $redirectUrl = './pin_location.php?barangay_bites=1';
+                                            break;
+                                        case 4:
+                                            $redirectUrl = './pin_location.php?barangay_suspected=1';
+                                            break;
+                                        default:
+                                            // Default case if notifType doesn't match any of the above
+                                            $redirectUrl = '#';
+                                    }
+
+                                    ?>
+
+                                    <td>
+                                        <a href="<?php echo $redirectUrl; ?>" class="btn btn-link" style="color: black; border: none; text-decoration: none; text-align: justify;">
+                                            <?php echo $notif['notifMessage'] . "<strong> by: " . $notif['name'] . "</strong>"; ?>
+                                        </a>
+                                    </td>
+                                    <td><?php echo date('F j, Y, g:i A', strtotime($notif['notifDate'])); ?></td>
+                                    <td><?php echo $notif['barangay']; ?></td>
+                                </tr>
+                            <?php } ?>
+                        </tbody>
+                    </table>
+                <?php } else { ?>
+                    <p>No notifications available.</p>
+                <?php } ?>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+</html>

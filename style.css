@@ -1,0 +1,142 @@
+/* Global styles */
+* {
+  padding: 0;
+  margin: 0;
+}
+
+.body {
+  background: #e4e4e4;
+}
+
+/* Navbar styles */
+.navbar {
+  background: #fafafa;
+}
+
+/* Wrapper styles */
+.wrapper {
+  margin: 50px auto;
+  padding-top: 50px;
+  padding-bottom: 50px;
+  border-radius: 3px;
+  background: #fafafa;
+  box-shadow: 6px 6px 9px #e4e4e4, -6px -6px 9px #ffffff;
+}
+
+/* Feature box styles */
+.feature-box {
+  padding: 30px;
+}
+
+/* Card styles */
+.card {
+  border-radius: 3px;
+  background: #fafafa;
+  box-shadow: 6px 6px 9px #e4e4e4, -6px -6px 9px #ffffff;
+}
+
+.card-body {
+  padding: 50px;
+}
+.card-body .btn {
+  padding: 10px 30px; /* Example adjustment */
+  font-size: 20px; /* Example adjustment */
+}
+/* Media query for tablets */
+@media screen and (max-width: 768px) {
+  /* Adjustments for tablets */
+  .wrapper {
+    margin: 20px auto;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .feature-box {
+    padding: 20px;
+  }
+
+  .card {
+    padding: 10px;
+  }
+
+  .card-body {
+    padding: 8px;
+    margin: 2px;
+  }
+  /* .button {
+    padding: 8px 16px;
+  } */
+  input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+  .form-outline {
+    padding: 10px;
+  }
+
+  .form-outline .form-label {
+    font-size: 1rem; /* Example adjustment */
+  }
+
+  .form-outline .form-control {
+    padding: 12px;
+    font-size: 1rem; /* Example adjustment */
+  }
+  .card-body .btn {
+    padding: 10px 20px; /* Example adjustment */
+    font-size: 1rem; /* Example adjustment */
+  }
+}
+
+/* Media query for mobile devices */
+@media screen and (max-width: 576px) {
+  /* Adjustments for mobile devices */
+  .navbar {
+    padding: 10px;
+  }
+
+  .wrapper {
+    margin: 5px auto;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .feature-box {
+    padding: 10px;
+  }
+
+  .card {
+    padding: 3px;
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+  .form-control {
+    font-size: 14px;
+  }
+  .form-outline {
+    padding: 5px;
+  }
+
+  .form-outline .form-label {
+    font-size: 0.875rem; /* Example adjustment */
+  }
+
+  .form-outline .form-control {
+    padding: 8px;
+    font-size: 0.875rem; /* Example adjustment */
+  }
+  .card-body .btn {
+    padding: 8px 16px; /* Example adjustment */
+    font-size: 0.875rem; /* Example adjustment */
+  }
+}
